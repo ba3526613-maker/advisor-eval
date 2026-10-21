@@ -78,6 +78,14 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 let code=localStorage.getItem("code")||"",role="",teachers=[],sel=null,data={ev:[],scores:{}},editing=false,adding=false;
 let invTpl=localStorage.getItem("inv")||"السلام عليكم أ. {name}،\nتم تسجيلك في منصة تقييم الموجّه الأكاديمي - مدارس باب المعرفة.\nافتح الرابط وأدخل رمزك لرفع شواهدك:\nالرابط: {link}\nرمز الدخول: {code}";
+const HF=new Intl.DateTimeFormat("en-u-ca-islamic-umalqura-nu-latn",{year:"numeric",month:"numeric"});
+function hij(d){const p=HF.formatToParts(d);return p.find(x=>x.type==="year").value.slice(0,4)+"-"+String(p.find(x=>x.type==="month").value).padStart(2,"0")}
+const CURM=hij(new Date()),MN=["محرم","صفر","ربيع الأول","ربيع الآخر","جمادى الأولى","جمادى الآخرة","رجب","شعبان","رمضان","شوال","ذو القعدة","ذو الحجة"];
+const mName=m=>MN[+m.slice(5)-1]+" "+m.slice(0,4)+"هـ";
+let month=CURM,months=[],closedList=[];
+const qs=()=>"m="+month+"&cur="+(month===CURM?1:0);
+function monthBar(){if(!sel)return"";const list=[...new Set([CURM,...months])].sort().reverse();
+ return `<div class="panel meta" style="gap:8px"><b>الشهر:</b><select id="msel">${list.map(m=>`<option value="${m}" ${m===month?"selected":""}>${mName(m)}${m===CURM?" (الحالي)":""}${closedList.includes(m)?" 🔒":""}</option>`).join("")}</select>${data.closed?"<span>🔒 مغلق (أرشيف)</span>":"<span>🟢 مفتوح</span>"}${role==="admin"?(data.closed?'<button class="btn alt sm" data-reopen="1">إعادة فتح</button>':'<button class="btn sm" data-close="1">اعتماد وإغلاق الشهر</button>'):""}</div>`}
 async function api(p,o={}){const r=await fetch("/api/"+p,{...o,headers:{"x-code":code,...(o.headers||{})}});if(r.status===401)throw"auth";if(!r.ok)throw(await r.text());return r.json()}
 const rndCode=()=>String(Math.floor(100000+Math.random()*900000));
 function waNum(p){let d=String(p||"").replace(/\D/g,"");if(!d)return"";if(d.startsWith("00"))d=d.slice(2);else if(d.startsWith("05"))d="966"+d.slice(1);else if(d.startsWith("5")&&d.length===9)d="966"+d;return d}
@@ -93,8 +101,8 @@ $("logoIn").onchange=e=>{const f=e.target.files[0];if(!f)return;const im=new Ima
 async function boot(r){$("login").hidden=true;$("app").hidden=false;
  if(role==="admin"){$("logoBtn").hidden=false;await loadTeachers();sel=teachers[0]||null}else sel=r.teacher;
  await loadData()}
-async function loadTeachers(){teachers=await api("teachers");if(sel)sel=teachers.find(t=>t.id===sel.id)||null}
-async function loadData(){if(!sel){data={ev:[],scores:{}}}else{data=await api("data"+(role==="admin"?"?t="+sel.id:""))}render()}
+async function loadTeachers(){teachers=await api("teachers?"+qs());if(sel)sel=teachers.find(t=>t.id===sel.id)||null}
+async function loadData(){if(!sel){data={ev:[],scores:{}};months=[];closedList=[]}else{data=await api("data?"+qs()+(role==="admin"?"&t="+sel.id:""));const r=await api("months"+(role==="admin"?"?t="+sel.id:""));months=r.months;closedList=r.closed}render()}
 const mine=()=>role==="teacher";
 function secT(s){let max=0,got=0;s.r.forEach(x=>{max+=x.m;got+=Math.min(x.m,+data.scores[x.id]||0)});return{max,got}}
 function adminBar(){
@@ -112,7 +120,7 @@ function invBar(){const p=waNum(sel.phone),m=encodeURIComponent(invMsg(sel));
  ${p?`<a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/${p}?text=${m}">دعوة واتساب</a><a class="btn alt sm" href="sms:+${p}?body=${m}">SMS</a>`:""}
  <input type="text" id="pd" placeholder="التاريخ للطباعة" value="${esc(data.scores.date||"")}" style="width:130px"><button class="btn alt sm" data-copy="1">نسخ الدعوة</button><button class="btn alt sm" data-edit="1">✎ تعديل البيانات</button><button class="btn alt sm" data-delt="1">🗑 حذف</button></div>${editing?form(sel):""}`}
 function render(){
- let h=role==="admin"?adminBar():"";
+ let h=(role==="admin"?adminBar():"")+monthBar();
  if(!sel){$("main").innerHTML=h+'<div class="note">أضف المعلمين من لوحة المنسق.</div>';return}
  let tot=0,all=0;SECTIONS.forEach(s=>{const t=secT(s);tot+=t.got;all+=t.max});
  h+=`<div class="panel total"><div><div style="color:var(--mut);font-size:13px">ملف المعلم</div><b>${esc(sel.name)}</b><div style="font-size:12px;color:var(--mut)">${esc(sel.campus)} ${sel.stage?"· "+esc(sel.stage):""}</div></div>
@@ -120,11 +128,11 @@ function render(){
  if(role==="admin")h+=invBar();
  SECTIONS.forEach((s,i)=>{const t=secT(s);h+=`<section class="sec"><h2><div>${i+1}. ${s.n}</div><span>${t.got} / ${t.max}</span></h2>`;
   s.r.forEach(x=>{const fs=data.ev.filter(f=>f.crit===x.id);
-   h+=`<div class="row"><p>${x.t}</p><div class="meta"><span>الدرجة الكلية: ${x.m}</span><span>المستحقة: ${role==="admin"?`<input class="sc" type="number" min="0" max="${x.m}" value="${data.scores[x.id]??""}" data-sc="${x.id}">`:`<b>${data.scores[x.id]??"—"}</b>`}</span></div>
-   ${role==="admin"?`<input type="text" class="nt" data-nt="${x.id}" placeholder="ملاحظات على البند" value="${esc(data.scores["n_"+x.id]||"")}" style="width:100%;margin-top:6px">`:(data.scores["n_"+x.id]?`<div class="meta">ملاحظة المنسق: ${esc(data.scores["n_"+x.id])}</div>`:"")}<div class="ex"><b>مثال على الشواهد:</b> ${x.e}</div><div class="files">`;
-   fs.forEach(f=>{h+=`<div class="f"><a href="/api/file?f=${f.fid}&t=${sel.id}&code=${encodeURIComponent(code)}" target="_blank" rel="noopener">📎 ${esc(f.name)}</a>${mine()?`<button class="btn alt sm" data-del="${f.fid}">حذف</button>`:""}</div>`});
+   h+=`<div class="row"><p>${x.t}</p><div class="meta"><span>الدرجة الكلية: ${x.m}</span><span>المستحقة: ${role==="admin"?`<input class="sc" type="number" min="0" max="${x.m}" value="${data.scores[x.id]??""}" data-sc="${x.id}" ${data.closed?"disabled":""}>`:`<b>${data.scores[x.id]??"—"}</b>`}</span></div>
+   ${role==="admin"?`<input type="text" class="nt" data-nt="${x.id}" ${data.closed?"disabled":""} placeholder="ملاحظات على البند" value="${esc(data.scores["n_"+x.id]||"")}" style="width:100%;margin-top:6px">`:(data.scores["n_"+x.id]?`<div class="meta">ملاحظة المنسق: ${esc(data.scores["n_"+x.id])}</div>`:"")}<div class="ex"><b>مثال على الشواهد:</b> ${x.e}</div><div class="files">`;
+   fs.forEach(f=>{h+=`<div class="f"><a href="/api/file?f=${f.fid}&t=${sel.id}&code=${encodeURIComponent(code)}&${qs()}" target="_blank" rel="noopener">📎 ${esc(f.name)}</a>${mine()&&!data.closed&&month===CURM?`<button class="btn alt sm" data-del="${f.fid}">حذف</button>`:""}</div>`});
    if(!fs.length)h+='<span class="meta">لا توجد شواهد بعد</span>';
-   h+="</div>"+(mine()?`<button class="up" data-up="${x.id}">＋ رفع شاهد لهذا البند (صور، PDF، Word… حتى 5MB)</button>`:`<div class="meta" style="margin-top:6px">الرفع من حساب المعلم فقط</div>`)+"</div>"});h+="</section>"});
+   h+="</div>"+(mine()&&!data.closed&&month===CURM?`<button class="up" data-up="${x.id}">＋ رفع شاهد لهذا البند (صور، PDF، Word… حتى 5MB)</button>`:`<div class="meta" style="margin-top:6px">${mine()?"الشهر مغلق أو سابق (للقراءة فقط)":"الرفع من حساب المعلم فقط"}</div>`)+"</div>"});h+="</section>"});
  h+=role==="admin"?`<div class="panel"><label>ملاحظات المنسق العامة<br><input type="text" id="gn" style="width:100%" value="${esc(data.scores.note||"")}"></label></div>`:(data.scores.note?`<div class="panel"><b>ملاحظات المنسق:</b> ${esc(data.scores.note)}</div>`:"");$("main").innerHTML=h}
 
 const PT=["توثيق العمل والملفات الفردية والجماعية للطلاب والطالبات بدقة واحترافية (شواهد: نماذج خطط وأنشطة مدرجة).","جودة التواصل وبناء علاقة تشاركية وثيقة مع أولياء الأمور وإطلاعهم على مسار وتقدم أبنائهم (شواهد: صور، دعوات، استطلاعات، قنوات اتصال).","التنسيق المستمر مع أعضاء الهيئة التعليمية والإدارية (معلمين، وكلاء، موجهين طلابيين) للوقوف على المستوى الأكاديمي والسلوكي للطلبة.","معالجة قصور الطلاب وتحفيزهم للمشاركة الفاعلة في الأنشطة الصفية واللاصفية.","متابعة سجلات الطلاب وكتبهم وملفات إنجازهم (Portfolio) والتوقيع عليها بانتظام.","فاعلية قيادة الموجه الأكاديمي لمجموعة الطلاب وتوجيه طاقاتهم بصورة إيجابية.","الالتزام بحضور جلسات التوجيه الدورية (اللقاءات الفردية والجماعية، الأنشطة الإثرائية، وبرامج المجموعات... إلخ).","تنفيذ المهام والتقارير المطلوبة في مواعيدها المحددة بدقة واحترافية.","تنفيذ أنشطة جماعية ولقاءات إثرائية مع أعضاء المجموعة أثناء الدوام المدرسي وخارجه.","دعم وتنمية منظومة القيم التربوية والأخلاقية والوطنية لدى الطلاب.","تمثيل دور الموجه والموجهة والأب الروحي للطالب/الطالبة في الجوانب السلوكية، النفسية، والأكاديمية.","إشراك جميع طلاب وطالبات المجموعة بشكل عادل في البرامج، الأنشطة، والمسابقات المدرسية.","اكتشاف جوانب القوة، الموهبة، والابتكار لدى الطلبة ودعم ورعاية المتأخرين دراسياً بخطط علاجية فاعلة.","حصول الموجه على خطابات شكر أو تقدير ذات صلة بتميز أداء دور (خطاب على الأقل فصلياً).","تقبل التوجيهات الإدارية والإرشادية من منسق البرنامج وتنفيذ التوصيات بدقة عالية.","فعاليات، مبادرات، وإبداعات إضافية غير تقليدية لإثراء برنامج التوجيه الأكاديمي وتحقيق أثره الإيجابي."];
@@ -132,14 +140,15 @@ function printForm(){const sc=data.scores;let tot=0,rows="",k=0;
  SECTIONS.forEach((s,si)=>s.r.forEach((x,ri)=>{const g=Math.min(x.m,+sc[x.id]||0);tot+=g;
   rows+=`<tr>${ri===0?`<td rowspan="${s.r.length}"><b>${si+1}</b></td><td rowspan="${s.r.length}"><b>${s.n}</b></td>`:""}<td class="t">${PT[k++]}</td><td>${x.m}</td><td><b>${sc[x.id]??""}</b></td><td class="t">${esc(sc["n_"+x.id]||"")}</td></tr>`}));
  $("pa").innerHTML=`<div class="ph"><img src="${$("logo").src}"><div><h2>استمارة تقييم الموجّه الأكاديمي</h2><div>مجمع الجامعة | مجمع باب المعرفة الرمال | مجمع باب المعرفة المهدية</div></div></div>
- <div class="pi"><span>اسم المعلم: <b>${esc(sel.name)}</b></span><span>المرحلة: <b>${esc(sel.stage||"............")}</b></span><span>المجمع: <b>${esc(sel.campus||"............")}</b></span><span>التاريخ: <b>${esc(sc.date||".... / .... / ....")}</b></span></div>
+ <div class="pi"><span>اسم المعلم: <b>${esc(sel.name)}</b></span><span>المرحلة: <b>${esc(sel.stage||"............")}</b></span><span>المجمع: <b>${esc(sel.campus||"............")}</b></span><span>الشهر: <b>${mName(month)}</b></span><span>التاريخ: <b>${esc(sc.date||".... / .... / ....")}</b></span></div>
  <table class="pt"><tr><th>م</th><th>البند الرئيسي</th><th>عنصر التقييم والأداء المستهدف</th><th>الدرجة الكلية</th><th>الدرجة المستحقة</th><th>ملاحظات</th></tr>${rows}<tr><td colspan="3"><b>المجموع</b></td><td><b>100</b></td><td><b>${tot}</b></td><td></td></tr></table>
  ${sc.note?`<div style="margin-top:6px"><b>ملاحظات عامة:</b> ${esc(sc.note)}</div>`:""}
  <div class="sg"><div>منسق/ـة البرنامج<br><br>..................</div><div>وكيل/ة المرحلة<br><br>..................</div><div>المشرف/ة التعليمي/ة<br><br>..................</div><div>مدير/ة المدرسة<br><br>..................</div></div>`;
  setTimeout(()=>print(),150)}
-async function saveScores(o){await api("score?t="+sel.id,{method:"POST",body:JSON.stringify(o)});data.scores=o;render()}
+async function saveScores(o){await api("score?t="+sel.id+"&"+qs(),{method:"POST",body:JSON.stringify(o)});data.scores=o;render()}
 $("main").addEventListener("change",e=>{const t=e.target;
  if(t.dataset.sc){const x=SECTIONS.flatMap(s=>s.r).find(r=>r.id===t.dataset.sc);saveScores({...data.scores,[t.dataset.sc]:Math.min(x.m,Math.max(0,+t.value||0))})}
+ else if(t.id==="msel"){month=t.value;loadData()}
  else if(t.dataset.nt)saveScores({...data.scores,["n_"+t.dataset.nt]:t.value});
  else if(t.id==="pd")saveScores({...data.scores,date:t.value});
  else if(t.id==="gn")saveScores({...data.scores,note:t.value})});
@@ -147,6 +156,8 @@ $("main").addEventListener("click",async e=>{const b=e.target.closest("button");
  try{
  if(d.t){sel=teachers.find(t=>t.id===d.t);editing=adding=false;await loadData()}
  else if(d.print)printForm();
+ else if(d.close){if(confirm("اعتماد وإغلاق شهر "+mName(month)+" لهذا المعلم؟")){await api("close?t="+sel.id+"&"+qs(),{method:"POST"});await loadTeachers();await loadData()}}
+ else if(d.reopen){if(confirm("إعادة فتح "+mName(month)+"؟")){await api("reopen?t="+sel.id+"&"+qs(),{method:"POST"});await loadTeachers();await loadData()}}
  else if(d.add){adding=!adding;editing=false;render()}
  else if(d.edit){editing=!editing;adding=false;render()}
  else if(d.cancel){editing=adding=false;render()}
@@ -158,9 +169,9 @@ $("main").addEventListener("click",async e=>{const b=e.target.closest("button");
   catch(x){$("ferr").textContent=String(x).includes("dup")?"الرمز مستخدم، غيّره":"تحقق من الاسم والرمز (4 خانات فأكثر)"}}
  else if(d.delt){if(confirm("حذف المعلم "+sel.name+" وكل شواهده؟")){await api("teacher?t="+sel.id,{method:"DELETE"});sel=null;await loadTeachers();sel=teachers[0]||null;await loadData()}}
  else if(d.up){const i=document.createElement("input");i.type="file";i.multiple=true;i.onchange=async()=>{const fs=[...i.files];if(!fs.length)return;b.disabled=true;
-   for(const f of fs){if(f.size>5*1024*1024){alert(f.name+": الحد الأقصى 5MB");continue}b.textContent="جارٍ رفع "+f.name+"…";try{await api(`upload?crit=${d.up}&name=${encodeURIComponent(f.name)}&type=${encodeURIComponent(f.type)}`,{method:"POST",body:f})}catch(_){alert("تعذّر رفع "+f.name)}}
+   for(const f of fs){if(f.size>5*1024*1024){alert(f.name+": الحد الأقصى 5MB");continue}b.textContent="جارٍ رفع "+f.name+"…";try{await api(`upload?crit=${d.up}&name=${encodeURIComponent(f.name)}&type=${encodeURIComponent(f.type)}&${qs()}`,{method:"POST",body:f})}catch(_){alert("تعذّر رفع "+f.name)}}
    await loadData()};i.click()}
- else if(d.del&&confirm("حذف هذا الشاهد؟")){await api("evidence?f="+d.del,{method:"DELETE"});await loadData()}
+ else if(d.del&&confirm("حذف هذا الشاهد؟")){await api("evidence?f="+d.del+"&"+qs(),{method:"DELETE"});await loadData()}
  }catch(x){if(x==="auth"){localStorage.removeItem("code");location.reload()}else alert("حدث خطأ")}});
 if(code)api("me").then(r=>{role=r.role;boot(r)}).catch(()=>{});
 </script></body></html>
