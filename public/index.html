@@ -93,7 +93,7 @@ function rankView(){const {a,u}=rankData();const cs=[...new Set(teachers.map(t=>
  const ml=[...new Set([CURM,...months])].sort().reverse();
  const opt=(l,v)=>'<option value="">الكل</option>'+l.map(x=>`<option ${x===v?"selected":""}>${esc(x)}</option>`).join("");
  const nm=t=>`<button class="btn alt sm" data-open="${t.id}">${esc(t.name)}</button>`;
- return `<div class="panel meta" style="gap:8px"><b>🏆 ترتيب المعلمين</b><select id="rmsel">${ml.map(m=>`<option value="${m}" ${m===month?"selected":""}>${mName(m)}</option>`).join("")}</select><select id="rcsel">${opt(cs,rk.c)}</select><select id="rssel">${opt(ss,rk.s)}</select><button class="btn sm" data-rprint="1">🖨 طباعة الترتيب</button><button class="btn alt sm" data-rword="1">📄 تصدير Word</button></div>
+ return `<div class="panel meta" style="gap:8px"><b>🏆 ترتيب المعلمين</b><select id="rmsel">${ml.map(m=>`<option value="${m}" ${m===month?"selected":""}>${mName(m)}</option>`).join("")}</select><select id="rcsel">${opt(cs,rk.c)}</select><select id="rssel">${opt(ss,rk.s)}</select><button class="btn sm" data-rprint="1">🖨 طباعة الترتيب</button><button class="btn alt sm" data-rword="1">📄 تصدير Word</button><button class="btn alt sm" data-rshare="1">📤 إرسال واتساب</button></div>
  <div class="panel tw"><table><tr><th>المركز</th><th>المعلم</th><th>المجمع</th><th>المرحلة</th><th>الدرجة</th><th>الشواهد</th></tr>${a.map(t=>`<tr><td><b>${t.rank}</b></td><td>${nm(t)}</td><td>${esc(t.campus)}</td><td>${esc(t.stage)}</td><td><b>${t.total}</b> / 100<div class="bar"><i style="width:${t.total}%"></i></div></td><td>${t.files}</td></tr>`).join("")}${u.map(t=>`<tr><td>—</td><td>${nm(t)}</td><td>${esc(t.campus)}</td><td>${esc(t.stage)}</td><td class="meta">لم يُقيَّم</td><td>${t.files}</td></tr>`).join("")}</table></div>`}
 function rankPrint(){const {a,u}=rankData();
  const rows=a.map(t=>`<tr><td>${t.rank}</td><td class="t">${esc(t.name)}</td><td>${esc(t.campus)}</td><td>${esc(t.stage)}</td><td><b>${t.total}</b></td><td>${t.files}</td></tr>`).join("")+u.map(t=>`<tr><td>—</td><td class="t">${esc(t.name)}</td><td>${esc(t.campus)}</td><td>${esc(t.stage)}</td><td>لم يُقيَّم</td><td>${t.files}</td></tr>`).join("");
@@ -102,12 +102,15 @@ function rankPrint(){const {a,u}=rankData();
 
 let wordMode=false;
 function outDoc(name){if(!wordMode){setTimeout(()=>print(),150);return}
- wordMode=false;const c=$("pa").cloneNode(true);
+ const mode=wordMode;wordMode=false;const c=$("pa").cloneNode(true);
  c.querySelectorAll("img").forEach(e=>e.remove());
  c.querySelectorAll(".ph,.pi,.sg").forEach(e=>{const tb=document.createElement("table");tb.style.width="100%";const tr=document.createElement("tr");[...e.children].forEach(ch=>{const td=document.createElement("td");td.style.cssText="text-align:"+(e.classList.contains("sg")?"center":"right")+";vertical-align:top;border:none";td.innerHTML=ch.innerHTML;tr.appendChild(td)});tb.appendChild(tr);e.replaceWith(tb)});
  const css='body{font-family:Arial,Tahoma;direction:rtl;font-size:11pt}table{border-collapse:collapse;width:100%}table.pt th,table.pt td{border:1px solid #444;padding:4px;text-align:center}table.pt th{background:#e6f4f2}td.t{text-align:right}';
  const html='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" dir="rtl"><head><meta charset="utf-8"><title>'+esc(name)+'</title><!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View></w:WordDocument></xml><![endif]--><style>@page{size:A4;margin:1cm}'+css+'</style></head><body dir="rtl">'+c.innerHTML+'</body></html>';
- const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["﻿"+html],{type:"application/msword"}));a.download=name+".doc";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500)}
+ const blob=new Blob(["﻿"+html],{type:"application/msword"}),file=new File([blob],name+".doc",{type:"application/msword"});
+ if(mode==="share"&&navigator.canShare&&navigator.canShare({files:[file]})){navigator.share({files:[file],title:name}).catch(()=>{});return}
+ const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name+".doc";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500);
+ if(mode==="share")alert("المشاركة المباشرة غير مدعومة في هذا المتصفح. تم تنزيل الملف، أرسله من تطبيق الملفات.")}
 async function api(p,o={}){const r=await fetch("/api/"+p,{...o,headers:{"x-code":code,...(o.headers||{})}});if(r.status===401)throw"auth";if(!r.ok)throw(await r.text());return r.json()}
 const rndCode=()=>String(Math.floor(100000+Math.random()*900000));
 function waNum(p){let d=String(p||"").replace(/\D/g,"");if(!d)return"";if(d.startsWith("00"))d=d.slice(2);else if(d.startsWith("05"))d="966"+d.slice(1);else if(d.startsWith("5")&&d.length===9)d="966"+d;return d}
@@ -147,7 +150,7 @@ function render(){
  if(!sel){$("main").innerHTML=h+'<div class="note">أضف المعلمين من لوحة المنسق.</div>';return}
  let tot=0,all=0;SECTIONS.forEach(s=>{const t=secT(s);tot+=t.got;all+=t.max});
  h+=`<div class="panel total"><div><div style="color:var(--mut);font-size:13px">ملف المعلم</div><b>${esc(sel.name)}</b><div style="font-size:12px;color:var(--mut)">${esc(sel.campus)} ${sel.stage?"· "+esc(sel.stage):""}</div></div>
- <div class="big">${tot}<span style="font-size:16px;color:var(--mut)"> / ${all}</span></div><div class="bar"><i style="width:${tot/all*100}%"></i></div><span class="meta">${data.ev.length} شاهد</span><button class="btn sm" data-print="1">🖨 طباعة الاستمارة</button><button class="btn alt sm" data-word="1">📄 تصدير Word</button>${role==="admin"?'<button class="btn sm" data-edit="1">✎ تعديل بيانات المعلم</button>':""}</div>`;
+ <div class="big">${tot}<span style="font-size:16px;color:var(--mut)"> / ${all}</span></div><div class="bar"><i style="width:${tot/all*100}%"></i></div><span class="meta">${data.ev.length} شاهد</span><button class="btn sm" data-print="1">🖨 طباعة الاستمارة</button><button class="btn alt sm" data-word="1">📄 تصدير Word</button><button class="btn alt sm" data-wshare="1">📤 إرسال واتساب</button>${role==="admin"?'<button class="btn sm" data-edit="1">✎ تعديل بيانات المعلم</button>':""}</div>`;
  if(role==="admin")h+=invBar();
  SECTIONS.forEach((s,i)=>{const t=secT(s);h+=`<section class="sec"><h2><div>${i+1}. ${s.n}</div><span>${t.got} / ${t.max}</span></h2>`;
   s.r.forEach(x=>{const fs=data.ev.filter(f=>f.crit===x.id);
@@ -184,6 +187,8 @@ $("main").addEventListener("click",async e=>{const b=e.target.closest("button");
  else if(d.open){sel=teachers.find(t=>t.id===d.open);view="file";await loadData()}
  else if(d.rprint)rankPrint();
  else if(d.rword){wordMode=true;rankPrint()}
+ else if(d.rshare){wordMode="share";rankPrint()}
+ else if(d.wshare){wordMode="share";printForm()}
  else if(d.word){wordMode=true;printForm()}
  else if(d.print)printForm();
  else if(d.close){if(confirm("اعتماد وإغلاق شهر "+mName(month)+" لهذا المعلم؟")){await api("close?t="+sel.id+"&"+qs(),{method:"POST"});await loadTeachers();await loadData()}}
