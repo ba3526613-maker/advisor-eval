@@ -22,7 +22,7 @@ export default async req=>{
   const {blobs}=await T.list();const out=[];
   for(const b of blobs){const t=await T.get(b.key,{type:"json"});if(!t)continue;
    const sc=(await ld(SC,t.id,m,cur))||{},ev=(await ld(EV,t.id,m,cur))||[];
-   let total=0;for(const k in sc)if(/^c\d+$/.test(k))total+=+sc[k]||0;out.push({...t,total,files:ev.length})}
+   let total=0,scored=false;for(const k in sc)if(/^c\d+$/.test(k)){total+=+sc[k]||0;scored=true}out.push({...t,total,scored,files:ev.length})}
   return J(out)}
  if(p==="months"){
   if(!tid)return J({error:"t"},400);const ms=new Set(),cl=[];
